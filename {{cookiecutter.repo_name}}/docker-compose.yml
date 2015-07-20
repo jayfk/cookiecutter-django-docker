@@ -1,0 +1,56 @@
+postgres:
+  image: postgres
+  volumes:
+    - /data/{{cookiecutter.repo_name}}/postgres:/var/lib/postgresql/data
+  env_file: env.production
+
+django:
+  build: .
+  links:
+    - postgres
+    - redis
+  {% if cookiecutter.use_celery %}
+    - rabbitmq
+  {% endif %}
+  command: /uwsgi.sh
+  volumes:
+    - /data/{{cookiecutter.repo_name}}/media:/media
+    - /static
+  env_file: env.production
+
+nginx:
+  build: ./compose/nginx
+  links:
+    - django
+  ports:
+    - "10.0.88.4:80:80"
+  volumes_from:
+    - django
+
+redis:
+  build: ./compose/redis
+  volumes:
+    - /data/{{cookiecutter.repo_name}}/redis:/data
+
+{% if cookiecutter.use_celery %}
+rabbitmq:
+  image: rabbitmq
+
+celeryworker:
+  build: .
+  env_file: env.production
+  links:
+   - rabbitmq
+   - postgres
+   - redis
+  command: su -m django -c "celery -A {{cookiecutter.repo_name}}.taskapp worker -l INFO"
+
+celerybeat:
+  build: .
+  env_file: env.production
+  links:
+    - rabbitmq
+    - postgres
+    - redis
+  command: su -m django -c "celery -A {{cookiecutter.repo_name}}.taskapp beat -l INFO"
+{% endif %}
